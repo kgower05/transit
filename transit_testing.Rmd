@@ -1,0 +1,44 @@
+---
+title: "transit_test"
+output: pdf_document
+date: "2026-02-21"
+---
+```{r}
+install.packages("tidyverse")
+require(ggplot2)
+require(stringi)
+```
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+# Getting the Data
+install.packages("tidytuesdayR")
+
+tuesdata <- tidytuesdayR::tt_load('2021-01-05')
+tuesdata <- tidytuesdayR::tt_load(2021, week = 2)
+
+transit_cost <- tuesdata$transit_cost
+```
+
+```{r}
+#remove variables we didnt use before submitting
+transit <- transit_cost[c("country", "city", "line", "start_year", "end_year", "rr", "length", "tunnel_per", "tunnel", "stations", "year", "real_cost", "cost_km_millions")]
+transit
+transit$tunnel_per <- as.double(sapply(transit$tunnel_per, FUN=stri_sub, from=1, to=-2))
+transit$start_year <- as.double(transit$start_year) #14 NAs added
+transit$end_year <- as.double(transit$end_year) #3 NAs added
+transit$real_cost <- as.double(transit$real_cost) #7 NAs added
+```
+
+```{r}
+ggplot(transit, aes(x=year)) +
+  geom_histogram()
+```
+
+```{r}
+pairs(data=transit, ~ rr + length + tunnel_per + tunnel + stations + year + real_cost + cost_km_millions)
+
+lm()
+```
+
