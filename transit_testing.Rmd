@@ -3,18 +3,87 @@ title: "transit_test"
 output: pdf_document
 date: "2026-02-21"
 ---
-```{r}
+
+```{r setup, include=FALSE, message=F, warning=F}
+knitr::opts_chunk$set(echo = TRUE)
+install.packages("tidytuesdayR")
 install.packages("tidyverse")
 require(ggplot2)
 require(stringi)
+require(tidyr)
+require(dplyr)
 ```
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
+
+## Getting the data
+
 ```{r}
 # Getting the Data
-install.packages("tidytuesdayR")
+transit_cost_2 <- read.csv("transit-1-16-2026.csv")
 
+gdp_data <- read.csv("world-bank-gdp.csv")
+```
+
+## Cleaning
+
+```{r}
+transit2 <- transit_cost_2[c("Country", "City", "Start.year", "End.year", "RR.", "Length", "TunnelPer", "Tunnel", "Elevated", "Atgrade", "Stations", "Platform.Length...Meters.", "Year", "Real.cost..2023.dollars.", "Cost.km..2023.dollars.")]
+
+cols <- c("Start.year", "End.year", "RR.", "Length", "TunnelPer", "Tunnel", "Elevated", "Atgrade", "Stations", "Platform.Length...Meters.", "Year", "Real.cost..2023.dollars.", "Cost.km..2023.dollars.")
+for(col in cols){
+  transit2[,col] <- as.numeric(transit2[,col])
+}
+
+transit2$Years <- transit2$End.year - transit2$Start.year
+
+transit2
+```
+
+
+
+
+## Exploratory plots/statistics
+```{r}
+stats <- matrix()
+```
+### Year
+```{r}
+ggplot(transit2) +
+  geom_histogram(aes(x=Start.year, color='Start Year'),binwidth=1) +
+  theme_bw() +
+  xlab("Year") +
+  ylab("Count") +
+  labs(title="Number of Projects Starting Each Year") +
+  geom_histogram(aes(x=End.year, color='End Year'), binwidth=1)
+
+stats[1:3]<-summarise(.data=transit2,
+          "5th" = quantile(transit2["Start.year"], 0.05, na.rm=T),
+          Median = median(transit2$Start.year, na.rm=T),
+          "95th" = quantile(transit2["Start.year"], 0.95, na.rm=T))
+```
+###Cost-km
+```{r}
+ggplot(transit2, aes(x=Cost.km..2023.dollars.)) +
+  geom_histogram(binwidth=50, color='black') +
+  theme_bw() +
+  xlab("Cost/km (millions of 2023 dollars)") +
+  ylab("Number of Projects") +
+  labs(title="Number of Projects vs. Cost/km")
+
+summarise(.data=transit2,
+          "5th"=quantile(transit2["Cost.km..2023.dollars."], 0.05, na.rm=T),
+          Median = median(transit2$Cost.km..2023.dollars., na.rm=T),
+          "95th"=quantile(transit2["Cost.km..2023.dollars."], 0.95, na.rm=T))
+```
+
+
+
+
+
+
+
+## Old stuff with other dataset
+
+```{r}
 tuesdata <- tidytuesdayR::tt_load('2021-01-05')
 tuesdata <- tidytuesdayR::tt_load(2021, week = 2)
 
@@ -29,16 +98,44 @@ transit$tunnel_per <- as.double(sapply(transit$tunnel_per, FUN=stri_sub, from=1,
 transit$start_year <- as.double(transit$start_year) #14 NAs added
 transit$end_year <- as.double(transit$end_year) #3 NAs added
 transit$real_cost <- as.double(transit$real_cost) #7 NAs added
+transit$years <- transit$end_year - transit$start_year
 ```
 
 ```{r}
 ggplot(transit, aes(x=year)) +
-  geom_histogram()
+  geom_histogram(binwidth=1) +
+  theme_bw()
+
+summarise(.data=transit,
+          quantile(transit["year"], 0.05, na.rm=T),
+          median = median(transit$year, na.rm=T),
+          quantile(transit["year"], 0.95, na.rm=T))
+
+ggplot(transit, aes(x=cost_km_millions)) +
+  geom_histogram(binwidth=50) +
+  theme_bw()
+
+summarise(.data=transit,
+          quantile(transit["cost_km_millions"], 0.05, na.rm=T),
+          median = median(transit$cost_km_millions, na.rm=T),
+          quantile(transit["cost_km_millions"], 0.95, na.rm=T))
+
+ggplot(transit, aes(x=country)) +
+  geom_bar(binwidth=50) +
+  theme_bw()
+
+summarise(.data=transit,
+          quantile(transit["cost_km_millions"], 0.05, na.rm=T),
+          median = median(transit$cost_km_millions, na.rm=T),
+          quantile(transit["cost_km_millions"], 0.95, na.rm=T))
+
+num <- summarize(.data=group_by(.data=transit, country),
+          n = n())
+
+num <- num[order(num$n, decreasing=T),]
+
+other <- c("Other", sum(num[15:length(num),"n"]))
+bar_num <- rbind(num[1:14,], other)
+
+
 ```
-
-```{r}
-pairs(data=transit, ~ rr + length + tunnel_per + tunnel + stations + year + real_cost + cost_km_millions)
-
-lm()
-```
-
