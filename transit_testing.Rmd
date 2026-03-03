@@ -19,8 +19,8 @@ require(dplyr)
 ```{r}
 # Getting the Data
 transit_cost_2 <- read.csv("transit-1-16-2026.csv")
-
 gdp_data <- read.csv("world-bank-gdp.csv")
+country_code <- read.csv("country-code.csv")
 ```
 
 ## Cleaning
@@ -75,9 +75,39 @@ summarise(.data=transit2,
           "95th"=quantile(transit2["Cost.km..2023.dollars."], 0.95, na.rm=T))
 ```
 
- 
+```{r}
+ggplot(transit2, aes(x=Length)) +
+  geom_histogram(binwidth=5, color='black') +
+  theme_bw() +
+  xlab("Length (km)") +
+  ylab("Number of Projects") +
+  labs(title="Number of Projects vs. Length (km)")
 
+summarise(.data=transit2,
+          "5th"=quantile(transit2["Length"], 0.05, na.rm=T),
+          Median = median(transit2$Length, na.rm=T),
+          "95th"=quantile(transit2["Length"], 0.95, na.rm=T))
 
+```
+```{r}
+m <- matrix(ncol=3)
+s <- c("Start.year", "End.year", "Cost.km..2023.dollars.", "Length")
+for(colname in s){
+  m <- rbind(m, summarise(.data=transit2,
+          "5th"=quantile(transit2[s], 0.05, na.rm=T),
+          Median = median(as.vector(transit2[s]), na.rm=T),
+          "95th"=quantile(transit2[s], 0.95, na.rm=T)))
+  
+}
+typeof(as.vector(transit2["Length"]))
+```
+
+## GDP
+
+```{r}
+gdp_data
+colnames(gdp_data)
+```
 
 
 
@@ -136,6 +166,11 @@ num <- num[order(num$n, decreasing=T),]
 
 other <- c("Other", sum(num[15:length(num),"n"]))
 bar_num <- rbind(num[1:14,], other)
+
+
+```
+
+```{r}
 
 
 ```
