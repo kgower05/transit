@@ -1,0 +1,95 @@
+---
+title: "ALison Final Proj Work"
+output: html_document
+---
+
+```{r init}
+library(dplyr)
+library(countrycode)
+library(car)
+```
+
+```{r cleaning}
+## reading in data
+df <- read.csv("transit-1-16-2026.csv")
+gdp <- read.csv("world-bank-gdp.csv")
+urban <- read.csv("world-bank-urban.csv", skip=4)
+minwage <- read.csv("minimum-wages.csv")
+
+
+#min wage
+minwage <- minwage %>%
+  mutate(Country_iso3 = countrycode(Area,origin = "country.name", destination = "iso3c"))
+
+
+#gdp
+gdp_long <- gdp %>%
+  pivot_longer(cols = starts_with("X"), names_to = "Year", values_to = "GDP"
+  ) %>%
+  mutate(Year = as.numeric(gsub("X", "", Year))
+  ) %>%
+  select(Country.Code, Year, GDP)
+
+# urban
+urban_long <- urban %>%
+  pivot_longer(cols = starts_with("X"), names_to = "Year", values_to = "UrbanPercent"
+  ) %>%
+  mutate(Year = as.numeric(gsub("X", "", Year))
+  ) %>%
+  select(Country.Code, Year, UrbanPercent)
+
+# transit cleaning
+df <- df %>%
+  mutate(
+    City = as.factor(City),
+    Country = as.factor(Country),
+    Start.year = as.numeric(Start.year),
+    End.year   = as.numeric(End.year),
+    Country_iso3 = countrycode(as.character(Country),
+                               origin = "iso2c",
+                               destination = "iso3c")
+  )
+
+df$Length <- as.numeric(df$Length)
+df$Stations <- as.numeric(df$Stations)
+
+df$TunnelPer <- gsub("%", "", df$TunnelPer)
+df$TunnelPer <- as.numeric(df$TunnelPer)
+
+df$Cost.km..2023.dollars. <- as.numeric(df$Cost.km..2023.dollars.)
+df$log_cost <- log(df$Cost.km..2023.dollars.)
+
+## duration
+df$Duration_years <- df$End.year - df$Start.year
+
+## continent
+df <- df %>%
+  mutate(
+    Continent = case_when(
+      Country %in% c("US", "CA", "MX", "PA") ~ "North America",
+      Country %in% c("BR", "AR", "CL", "CO", "PE", "EC") ~ "South America",
+      Country %in% c("GB", "FR", "DE", "ES", "IT", "NL", "NO",
+                     "SE", "DK", "FI", "AT", "BE", "BG",
+                     "CZ", "GR", "HU", "CH") ~ "Europe",
+      Country %in% c("CN", "JP", "KR", "IN", "HK", "ID",
+                     "IL", "IR", "MY", "BD", "TH", "AE",
+                     "BH", "KW") ~ "Asia",
+      Country %in% c("AU", "NZ") ~ "Oceania",
+      Country %in% c("EG", "ZA") ~ "Africa",
+      TRUE ~ NA_character_
+    ),
+    Continent = as.factor(Continent)
+  )
+
+df <- df %>%
+  left_join(gdp_long,   by = c("Country_iso3" = "Country.Code", "Start.year" = "Year")) %>%
+  left_join(urban_long, by = c("Country_iso3" = "Country.Code", "Start.year" = "Year")) %>%
+  left_join(minwage, by = "Country_iso3")
+
+names(df)[names(df) == "Total"] <- "Min_Wage"
+
+df <- df %>% 
+  select("Country", "Start.year", "PPP.rate", "End.year", "RR.", "Length", "TunnelPer", "Elevated", "Stations", "Real.cost..2023.dollars.", "Cost.km..2023.dollars.", "log_cost", "Duration_years", "Continent", "GDP", "UrbanPercent", "Min_Wage")
+
+
+```
