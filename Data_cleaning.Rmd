@@ -8,7 +8,7 @@ library(dplyr)
 ```
 
 ```{r cleaning}
-## reading in data
+
 df <- read.csv("transit-1-16-2026.csv")
 
 df <- df %>%
