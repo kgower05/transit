@@ -21,44 +21,62 @@ require(dplyr)
 transit_cost_2 <- read.csv("transit-1-16-2026.csv")
 gdp_data <- read.csv("world-bank-gdp.csv")
 country_code <- read.csv("country-code.csv")
+urban <- read.csv("urban-pop.csv")
+fed <- read.csv("FEDFUNDS.csv")
 ```
 
 ## Cleaning
 
 ```{r}
-transit2 <- transit_cost_2[c("Country", "City", "Start.year", "End.year", "RR.", "Length", "TunnelPer", "Tunnel", "Elevated", "Atgrade", "Stations", "Platform.Length...Meters.", "Year", "Real.cost..2023.dollars.", "Cost.km..2023.dollars.")]
+transit2 <- transit_cost_2[1:1007,c("Country", "City", "Start.year", "End.year", "RR.", "Length", "TunnelPer", "Tunnel", "Elevated", "Atgrade", "Stations", "Platform.Length...Meters.", "Year", "Cost.km..2023.dollars.")]
 
-cols <- c("Start.year", "End.year", "RR.", "Length", "TunnelPer", "Tunnel", "Elevated", "Atgrade", "Stations", "Platform.Length...Meters.", "Year", "Real.cost..2023.dollars.", "Cost.km..2023.dollars.")
+cols <- c("Start.year", "End.year", "RR.", "Length", "TunnelPer", "Tunnel", "Elevated", "Atgrade", "Stations", "Platform.Length...Meters.", "Year",  "Cost.km..2023.dollars.")
 for(col in cols){
   transit2[,col] <- as.numeric(transit2[,col])
 }
 
 transit2$Years <- transit2$End.year - transit2$Start.year
+transit2$real_cost <- transit2$Cost.km..2023.dollars. * transit2$Length
 
 transit2
 ```
 
 
+## Continent
 
+```{r}
+transit2 <- transit2 %>%
+  mutate(
+    Continent = case_when(
+      Country %in% c("US", "CA", "MX", "PA") ~ "North America",
+      Country %in% c("BR", "AR", "CL", "CO", "PE", "EC") ~ "South America",
+      Country %in% c("GB", "FR", "DE", "ES", "IT", "NL", "NO",
+                     "SE", "DK", "FI", "AT", "BE", "BG",
+                     "CZ", "GR", "HU", "CH", "RU") ~ "Europe",
+      Country %in% c("CN", "JP", "KR", "IN", "HK", "ID",
+                     "IL", "IR", "MY", "BD", "TH", "AE",
+                     "BH", "KW") ~ "Asia",
+      Country %in% c("AU", "NZ") ~ "Oceania",
+      Country %in% c("EG", "ZA") ~ "Africa",
+      TRUE ~ NA_character_
+    ),
+    Continent = as.factor(Continent)
+  )
+
+transit2
+```
 
 ## Exploratory plots/statistics
-```{r}
-stats <- matrix()
-```
+
 ### Year
 ```{r}
 ggplot(transit2) +
   geom_histogram(aes(x=Start.year, color='Start Year'),binwidth=1) +
   theme_bw() +
   xlab("Year") +
-  ylab("Count") +
-  labs(title="Number of Projects Starting Each Year") +
+  ylab("Number of Projects") +
+  labs(title="Number of Projects Starting and Ending Each Year") +
   geom_histogram(aes(x=End.year, color='End Year'), binwidth=1)
-
-stats[1:3]<-summarise(.data=transit2,
-          "5th" = quantile(transit2["Start.year"], 0.05, na.rm=T),
-          Median = median(transit2$Start.year, na.rm=T),
-          "95th" = quantile(transit2["Start.year"], 0.95, na.rm=T))
 ```
 ###Cost-km
 ```{r}
@@ -68,11 +86,6 @@ ggplot(transit2, aes(x=Cost.km..2023.dollars.)) +
   xlab("Cost/km (millions of 2023 dollars)") +
   ylab("Number of Projects") +
   labs(title="Number of Projects vs. Cost/km")
-
-summarise(.data=transit2,
-          "5th"=quantile(transit2["Cost.km..2023.dollars."], 0.05, na.rm=T),
-          Median = median(transit2$Cost.km..2023.dollars., na.rm=T),
-          "95th"=quantile(transit2["Cost.km..2023.dollars."], 0.95, na.rm=T))
 ```
 
 ```{r}
@@ -83,94 +96,158 @@ ggplot(transit2, aes(x=Length)) +
   ylab("Number of Projects") +
   labs(title="Number of Projects vs. Length (km)")
 
-summarise(.data=transit2,
-          "5th"=quantile(transit2["Length"], 0.05, na.rm=T),
-          Median = median(transit2$Length, na.rm=T),
-          "95th"=quantile(transit2["Length"], 0.95, na.rm=T))
+```
 
-```
-```{r}
-m <- matrix(ncol=3)
-s <- c("Start.year", "End.year", "Cost.km..2023.dollars.", "Length")
-for(colname in s){
-  m <- rbind(m, summarise(.data=transit2,
-          "5th"=quantile(transit2[s], 0.05, na.rm=T),
-          Median = median(as.vector(transit2[s]), na.rm=T),
-          "95th"=quantile(transit2[s], 0.95, na.rm=T)))
-  
-}
-typeof(as.vector(transit2["Length"]))
-```
 
 ## GDP
 
 ```{r}
-gdp_data
-colnames(gdp_data)
+country_name_to_code <- function(name){
+  country_code[country_code$Name==name,]$Code
+}
+
+country_code_to_gdp <- function(code, year){
+  ifelse(!(year %in% 1960:2025),
+         NA,
+         gdp_data[gdp_data$CC==code, paste("X",year, sep="")])
+}
+
+gdp_data$CC <- sapply(gdp_data$Country.Name, FUN=country_name_to_code)
+gdp_data$CC <- as.character(gdp_data$CC)
+
+
+gdp <- c()
+for(i in 1:nrow(transit2)){
+  row <- transit2[i,c("Country","Year")]
+  gdp <- c(gdp, country_code_to_gdp(row[[1]],row[[2]]))
+}
+transit2$gdp <- gdp
+gdp_data$Country.Name
+
+unique(gdp_data$Country.Name)
 ```
 
+### Removing NAs
+```{r}
+for (yr in 1960:2025){
+transit2[transit2$Country=="RU"&transit2$Year==yr,"gdp"] <- gdp_data[gdp_data$Country.Name=="Russian Federation", paste("X",yr,sep="")]
 
+transit2[transit2$Country=="TR"&transit2$Year==yr,"gdp"] <- gdp_data[gdp_data$Country.Name=="Turkiye", paste("X",yr,sep="")]
 
-## Old stuff with other dataset
+transit2[transit2$Country=="US"&transit2$Year==yr,"gdp"] <- gdp_data[gdp_data$Country.Name=="United States", paste("X",yr,sep="")]
+
+transit2[transit2$Country=="KR"&transit2$Year==yr,"gdp"] <- gdp_data[gdp_data$Country.Name=="Korea, Rep.", paste("X",yr,sep="")]
+
+transit2[transit2$Country=="HK"&transit2$Year==yr,"gdp"] <- gdp_data[gdp_data$Country.Name=="Hong Kong SAR, China", paste("X",yr,sep="")]
+
+transit2[transit2$Country=="UK"&transit2$Year==yr,"gdp"] <- gdp_data[gdp_data$Country.Name=="United Kingdom", paste("X",yr,sep="")]
+
+transit2[transit2$Country=="SA"&transit2$Year==yr,"gdp"] <- gdp_data[gdp_data$Country.Name=="South Africa", paste("X",yr,sep="")]
+
+transit2[transit2$Country=="TH"&transit2$Year==yr,"gdp"] <- gdp_data[gdp_data$Country.Name=="Thailand", paste("X",yr,sep="")]
+}
+
+cy <- transit2[is.na(transit2$gdp),c("Country", "Year")]
+cyg <- group_by(.data=cy, cy$Country) 
+s <- summarise(cyg,
+          n=n())
+s
+sum(s$n)
+
+sum(is.na(transit2$gdp) & transit2$Year == 2025)
+```
+
+##Urban pop
 
 ```{r}
-tuesdata <- tidytuesdayR::tt_load('2021-01-05')
-tuesdata <- tidytuesdayR::tt_load(2021, week = 2)
+code_to_urban <- function(code, year){
+  ifelse(!(year %in% 1960:2025),
+         NA,
+         urban[urban$CC==code, paste("X",year, sep="")])
+}
 
-transit_cost <- tuesdata$transit_cost
+urban$CC <- sapply(urban$Country.Name, FUN=country_name_to_code)
+urban$CC <- as.character(urban$CC)
+
+
+urb <- c()
+for(i in 1:nrow(transit2)){
+  row <- transit2[i,c("Country","Year")]
+  urb <- c(urb, code_to_urban(row[[1]],row[[2]]))
+}
+transit2$urban_pop <- urb
+
+```
+
+## FED
+```{r}
+fed$year <- substr(fed$observation_date, 1, 4)
+
+for(yr in 1954:2026){
+  if(yr %in% transit2$Year){
+  fed[fed$year==yr,"int"] <- mean(fed[fed$year==yr,"FEDFUNDS"])}
+}
+
+year_to_rate <- function(yr){
+  fed[fed$year==yr, "int"]
+}
+
+transit2$fed <- 0
+
+```
+
+
+
+## Overall Cost
+
+```{r}
+cost <- lm(data=transit2, real_cost ~ Stations)
+summary(cost)
+
+cost_st <- lm(data=transit2, real_cost ~ Stations + gdp)
+summary(cost_st)
+
+cost_2 <- lm(data=transit2, real_cost ~ Stations + gdp + RR.)
+summary(cost_2)
+
+cost_2s <- lm(data=transit2, sqrt(real_cost) ~ Stations + gdp + RR.)
+summary(cost_2s)
+
+
+plot(cost_2g)
+
+transit2
+pairs(data=transit2, ~Length+sqrt(real_cost)+Stations+gdp)
+pairs(data=transit2, ~Length+real_cost+Stations+gdp)
+
+
+BIC(cost)
+BIC(cost_st)
+BIC(cost_2s)
+BIC(cost_2g)
+
+AIC(cost)
+AIC(cost_st)
+AIC(cost_2s)
+AIC(cost_2g)
+
+summary(cost)$adj.r.squared
+summary(cost_st)$adj.r.squared
+summary(cost_2s)$adj.r.squared
+summary(cost_2g)$adj.r.squared
+
+transit2
+```
+```{r}
+plot(cost_2)
 ```
 
 ```{r}
-#remove variables we didnt use before submitting
-transit <- transit_cost[c("country", "city", "line", "start_year", "end_year", "rr", "length", "tunnel_per", "tunnel", "stations", "year", "real_cost", "cost_km_millions")]
-transit
-transit$tunnel_per <- as.double(sapply(transit$tunnel_per, FUN=stri_sub, from=1, to=-2))
-transit$start_year <- as.double(transit$start_year) #14 NAs added
-transit$end_year <- as.double(transit$end_year) #3 NAs added
-transit$real_cost <- as.double(transit$real_cost) #7 NAs added
-transit$years <- transit$end_year - transit$start_year
+transit2[is.na(transit2$gdp) & transit2$Year > 2023,c("Country","Year")]
+
+transit2$Year > 2023
 ```
 
-```{r}
-ggplot(transit, aes(x=year)) +
-  geom_histogram(binwidth=1) +
-  theme_bw()
-
-summarise(.data=transit,
-          quantile(transit["year"], 0.05, na.rm=T),
-          median = median(transit$year, na.rm=T),
-          quantile(transit["year"], 0.95, na.rm=T))
-
-ggplot(transit, aes(x=cost_km_millions)) +
-  geom_histogram(binwidth=50) +
-  theme_bw()
-
-summarise(.data=transit,
-          quantile(transit["cost_km_millions"], 0.05, na.rm=T),
-          median = median(transit$cost_km_millions, na.rm=T),
-          quantile(transit["cost_km_millions"], 0.95, na.rm=T))
-
-ggplot(transit, aes(x=country)) +
-  geom_bar(binwidth=50) +
-  theme_bw()
-
-summarise(.data=transit,
-          quantile(transit["cost_km_millions"], 0.05, na.rm=T),
-          median = median(transit$cost_km_millions, na.rm=T),
-          quantile(transit["cost_km_millions"], 0.95, na.rm=T))
-
-num <- summarize(.data=group_by(.data=transit, country),
-          n = n())
-
-num <- num[order(num$n, decreasing=T),]
-
-other <- c("Other", sum(num[15:length(num),"n"]))
-bar_num <- rbind(num[1:14,], other)
 
 
-```
 
-```{r}
-
-
-```
