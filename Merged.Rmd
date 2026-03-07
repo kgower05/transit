@@ -1,0 +1,209 @@
+---
+title: "Merging Code"
+output: html_document
+---
+
+```{r setup, include=FALSE, message=F, warning=F}
+knitr::opts_chunk$set(echo = TRUE)
+install.packages("tidytuesdayR")
+install.packages("tidyverse")
+require(ggplot2)
+require(stringi)
+require(tidyr)
+require(dplyr)
+require(corrplot)
+```
+
+## Getting the data
+
+```{r}
+# Getting the Data
+transit_cost_2 <- read.csv("transit-1-16-2026.csv")
+gdp_data <- read.csv("world-bank-gdp.csv")
+country_code <- read.csv("country-code.csv")
+urban <- read.csv("urban-pop.csv")
+fed <- read.csv("FEDFUNDS.csv")
+```
+
+## Cleaning
+
+```{r}
+transit2 <- transit_cost_2[1:1007,c("Country", "City", "Start.year", "End.year", "RR.", "Length", "TunnelPer", "Tunnel", "Elevated", "Atgrade", "Stations", "Platform.Length...Meters.", "Year", "Cost.km..2023.dollars.")]
+
+cols <- c("Start.year", "End.year", "RR.", "Length", "TunnelPer", "Tunnel", "Elevated", "Atgrade", "Stations", "Platform.Length...Meters.", "Year",  "Cost.km..2023.dollars.")
+for(col in cols){
+  transit2[,col] <- as.numeric(transit2[,col])
+}
+
+transit2$Years <- transit2$End.year - transit2$Start.year
+transit2$real_cost <- transit2$Cost.km..2023.dollars. * transit2$Length
+transit2$log_cost <- log(transit2$Cost.km..2023.dollars.)
+transit2$log_real_cost <- log(transit2$real_cost)
+
+transit2
+```
+
+
+## Continent
+
+```{r}
+transit2 <- transit2 %>%
+  mutate(
+    Continent = case_when(
+      Country %in% c("US", "CA", "MX", "PA") ~ "North America",
+      Country %in% c("BR", "AR", "CL", "CO", "PE", "EC") ~ "South America",
+      Country %in% c("GB", "FR", "DE", "ES", "IT", "NL", "NO",
+                     "SE", "DK", "FI", "AT", "BE", "BG",
+                     "CZ", "GR", "HU", "CH", "RU") ~ "Europe",
+      Country %in% c("CN", "JP", "KR", "IN", "HK", "ID",
+                     "IL", "IR", "MY", "BD", "TH", "AE",
+                     "BH", "KW") ~ "Asia",
+      Country %in% c("AU", "NZ") ~ "Oceania",
+      Country %in% c("EG", "ZA") ~ "Africa",
+      TRUE ~ NA_character_
+    ),
+    Continent = as.factor(Continent)
+  )
+
+transit2
+```
+
+## GDP
+
+```{r}
+country_name_to_code <- function(name){
+  country_code[country_code$Name==name,]$Code
+}
+
+country_code_to_gdp <- function(code, year){
+  ifelse(!(year %in% 1960:2025),
+         NA,
+         gdp_data[gdp_data$CC==code, paste("X",year, sep="")])
+}
+
+gdp_data$CC <- sapply(gdp_data$Country.Name, FUN=country_name_to_code)
+gdp_data$CC <- as.character(gdp_data$CC)
+
+
+gdp <- c()
+for(i in 1:nrow(transit2)){
+  row <- transit2[i,c("Country","Year")]
+  gdp <- c(gdp, country_code_to_gdp(row[[1]],row[[2]]))
+}
+transit2$gdp <- gdp
+gdp_data$Country.Name
+
+unique(gdp_data$Country.Name)
+```
+
+### Removing NAs
+```{r}
+for (yr in 1960:2025){
+transit2[transit2$Country=="RU"&transit2$Year==yr,"gdp"] <- gdp_data[gdp_data$Country.Name=="Russian Federation", paste("X",yr,sep="")]
+
+transit2[transit2$Country=="TR"&transit2$Year==yr,"gdp"] <- gdp_data[gdp_data$Country.Name=="Turkiye", paste("X",yr,sep="")]
+
+transit2[transit2$Country=="US"&transit2$Year==yr,"gdp"] <- gdp_data[gdp_data$Country.Name=="United States", paste("X",yr,sep="")]
+
+transit2[transit2$Country=="KR"&transit2$Year==yr,"gdp"] <- gdp_data[gdp_data$Country.Name=="Korea, Rep.", paste("X",yr,sep="")]
+
+transit2[transit2$Country=="HK"&transit2$Year==yr,"gdp"] <- gdp_data[gdp_data$Country.Name=="Hong Kong SAR, China", paste("X",yr,sep="")]
+
+transit2[transit2$Country=="UK"&transit2$Year==yr,"gdp"] <- gdp_data[gdp_data$Country.Name=="United Kingdom", paste("X",yr,sep="")]
+
+transit2[transit2$Country=="ZA"&transit2$Year==yr,"gdp"] <- gdp_data[gdp_data$Country.Name=="South Africa", paste("X",yr,sep="")]
+
+transit2[transit2$Country=="EG" & transit2$Year==yr, "gdp"] <- 
+    gdp_data[gdp_data$Country.Name=="Egypt, Arab Rep.", paste("X", yr, sep="")]
+
+transit2[transit2$Country=="TH"&transit2$Year==yr,"gdp"] <- gdp_data[gdp_data$Country.Name=="Thailand", paste("X",yr,sep="")]
+}
+
+cy <- transit2[is.na(transit2$gdp),c("Country", "Year")]
+cyg <- group_by(.data=cy, cy$Country) 
+s <- summarise(cyg,
+          n=n())
+s
+sum(s$n)
+
+sum(is.na(transit2$gdp) & transit2$Year == 2025)
+```
+
+##Urban pop
+
+```{r}
+code_to_urban <- function(code, year){
+  ifelse(!(year %in% 1960:2025),
+         NA,
+         urban[urban$CC==code, paste("X",year, sep="")])
+}
+
+urban$CC <- sapply(urban$Country.Name, FUN=country_name_to_code)
+urban$CC <- as.character(urban$CC)
+
+
+urb <- c()
+for(i in 1:nrow(transit2)){
+  row <- transit2[i,c("Country","Year")]
+  urb <- c(urb, code_to_urban(row[[1]],row[[2]]))
+}
+transit2$urban_pop <- urb
+
+```
+
+## Histograms and missing values plot
+
+```{r histograms}
+
+
+```
+
+## Imputation
+```{r imputation}
+#imputation
+transit2_imp <- transit2 %>%
+  group_by(Country) %>%
+  mutate(
+    End.year = ifelse(is.na(End.year),
+                      round(Start.year + mean(Years, na.rm = TRUE)),
+                      End.year)
+  ) %>%
+  ungroup()
+
+transit2_imp$Years <- transit2_imp$End.year - transit2_imp$Start.year
+
+keep <- c("Country", "Start.year", "End.year", "RR.", "Length", "Tunnel", "Stations", "log_cost", "log_real_cost", "Year", "Cost.km..2023.dollars.", "Years", "real_cost", "Continent", "gdp", "urban_pop")
+
+df_clean <- na.omit(transit2_imp[keep])
+```
+
+## Overall cost and continents
+```{r alison model}
+transit_model_data <- transit2_imp %>%
+  select(real_cost, Stations, Years, RR., Continent, gdp, Tunnel) %>%
+  drop_na()
+
+continent_real <- lm(data=transit_model_data, sqrt(real_cost) ~ Stations + Years + Continent + gdp + Tunnel)
+summary(continent_real)
+plot(continent_real)
+vif(continent_real)
+
+##removes RR
+step_model <- step(continent_real, direction = "both")
+summary(step_model)
+```
+
+## Testing for spatial and autocorrelation
+
+# Corr plot
+```{r corr}
+numeric_vars <- transit2 %>%
+  select(real_cost, Years, Start.year,
+         Length, Stations, TunnelPer, urban_pop, gdp)
+numeric_vars <- numeric_vars %>%
+  filter(complete.cases(.))
+cor_matrix <- cor(numeric_vars, use = "pairwise.complete.obs")
+
+corrplot(cor_matrix, method = "color", type = "upper",
+         tl.col = "black", tl.srt = 45)
+```
