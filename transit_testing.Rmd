@@ -201,51 +201,42 @@ transit2$fed <- 0
 ## Overall Cost
 
 ```{r}
-cost <- lm(data=transit2, real_cost ~ Stations)
+
+cost <- lm(data=transit2, real_cost ~ Stations + gdp + RR.)
 summary(cost)
 
-cost_st <- lm(data=transit2, real_cost ~ Stations + gdp)
-summary(cost_st)
+cost_sq <- lm(data=transit2, sqrt(real_cost) ~ Stations + gdp + RR.)
+summary(cost_sq)
 
-cost_2 <- lm(data=transit2, real_cost ~ Stations + gdp + RR.)
-summary(cost_2)
-
-cost_2s <- lm(data=transit2, sqrt(real_cost) ~ Stations + gdp + RR.)
-summary(cost_2s)
-
-
+plot(cost)
 plot(cost_2g)
 
-transit2
-pairs(data=transit2, ~Length+sqrt(real_cost)+Stations+gdp)
-pairs(data=transit2, ~Length+real_cost+Stations+gdp)
-
-
 BIC(cost)
-BIC(cost_st)
-BIC(cost_2s)
-BIC(cost_2g)
+BIC(cost_sq)
 
 AIC(cost)
-AIC(cost_st)
-AIC(cost_2s)
-AIC(cost_2g)
+AIC(cost_sq)
 
 summary(cost)$adj.r.squared
-summary(cost_st)$adj.r.squared
-summary(cost_2s)$adj.r.squared
-summary(cost_2g)$adj.r.squared
+summary(cost_sq)$adj.r.squared
 
-transit2
 ```
 ```{r}
 plot(cost_2)
+
+# 7*10^6/10^13  / $1
+$ 7/10^7 / $1
+# per dollar of gdp, we expect the construction cost to go up by 7 10-millionths of a dollar
 ```
 
 ```{r}
 transit2[is.na(transit2$gdp) & transit2$Year > 2023,c("Country","Year")]
 
 transit2$Year > 2023
+```
+
+```{r}
+1-(17/5000)/(49/5000)
 ```
 
 
