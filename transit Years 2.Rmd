@@ -19,6 +19,7 @@ require(stringi)
 require(tidyr)
 require(dplyr)
 require(corrplot)
+require(leaps)
 ```
 
 ## Getting the data
@@ -303,16 +304,29 @@ transit2_imp <- transit2 %>%
 
 transit2_imp$Years <- transit2_imp$End.year - transit2_imp$Start.year
 
-keep <- c("Country", "Start.year", "End.year", "RR.", "Length", "Tunnel", "TunnelPer", "Stations", "log_cost", "log_real_cost", "Year", "Cost.km..2023.dollars.", "Years", "real_cost", "Continent", "gdp", "urban_pop", "Elevated", "Atgrade", "Platform.Length...Meters.")
-
-# Might not be relevant for this analysis
-df_clean <- na.omit(transit2_imp[keep])
-
 na_count_imp <- sum(is.na(transit2_imp$Years))
 na_count_imp
 
+# Account for Elevated, Atgrade, and Platform Length NAs
+# Setting as zero
+transit2_imp$Elevated[is.na(transit2_imp$Elevated)] <- 0
+transit2_imp$Atgrade[is.na(transit2_imp$Atgrade)] <- 0
+transit2_imp$Platform.Length...Meters.[is.na(transit2_imp$Platform.Length...Meters.)] <- 0
+
+# Not keeping location because focusing on project type on project time length 
+# or years to avoid similarity from years when choosing model
+keep <- c("RR.", "Length", "Tunnel", "TunnelPer", "Stations", "log_cost", "log_real_cost", "Year", "Cost.km..2023.dollars.", "Years", "real_cost", "gdp", "urban_pop", "Elevated", "Atgrade", "Platform.Length...Meters.")
+
+df_clean <- na.omit(transit2_imp[keep])
+
+
 # Table without imputation and years NAs
 transit_years_removed <- transit2[!is.na(transit2$Years),]
+
+# Accounting for NAs
+transit_years_removed$Elevated[is.na(transit_years_removed$Elevated)] <- 0
+transit_years_removed$Atgrade[is.na(transit_years_removed$Atgrade)] <- 0
+transit_years_removed$Platform.Length...Meters.[is.na(transit_years_removed$Platform.Length...Meters.)] <- 0
 
 # Stations vs Year Length
 par(mfrow = c(1, 2))
@@ -335,35 +349,70 @@ ggplot(transit2_imp, aes(x = Continent, y = Years)) +
   theme_minimal()
 ```
 
-## Model Testing
+## Model Testing with Imputation
 ```{r}
-# full_model <- lm(transit2_imp$Years ~ ., transit2_imp)
-# summary(full_model)
+# removes 894 observations
+#full_model <- lm(df_clean$Years ~ ., df_clean)
+#summary(full_model)
+
 
 # Model using predictors assumed to have potential impact
-project_years_model <- lm(transit2_imp$Years ~ transit2_imp$RR. + transit2_imp$Length + transit2_imp$TunnelPer + transit2_imp$Elevated + transit2_imp$Atgrade + transit2_imp$Stations + transit2_imp$Platform.Length...Meters. + transit2_imp$urban_pop + transit2_imp$gdp + transit2_imp$real_cost)
+project_years_model <- lm(df_clean$Years ~ df_clean$RR. + df_clean$Length + df_clean$TunnelPer + df_clean$Elevated + df_clean$Atgrade + df_clean$Stations + df_clean$Platform.Length...Meters. + df_clean$urban_pop + df_clean$gdp + df_clean$real_cost)
 summary(project_years_model)
 
-project_years_model_log <- lm(log(transit2_imp$Years) ~ transit2_imp$RR. + transit2_imp$Length + transit2_imp$TunnelPer + transit2_imp$Elevated + transit2_imp$Atgrade + transit2_imp$Stations + transit2_imp$Platform.Length...Meters. + transit2_imp$urban_pop + transit2_imp$gdp + transit2_imp$real_cost)
+project_years_model_log <- lm(log(df_clean$Years) ~ df_clean$RR. + df_clean$Length + df_clean$TunnelPer + df_clean$Elevated + df_clean$Atgrade + df_clean$Stations + df_clean$Platform.Length...Meters. + df_clean$urban_pop + df_clean$gdp + df_clean$real_cost)
 summary(project_years_model_log)
 
 # Models of all possible predictors
 # Log Test
-years_full_log <- lm(data=df_clean, log(Years) ~ Stations + RR. + Length + TunnelPer + Elevated + Atgrade + Stations + Platform.Length...Meters. + urban_pop + gdp + real_cost)
-summary(years_full_log)
+# years_full_log <- lm(data=df_clean, log(Years) ~ Stations + RR. + Length + TunnelPer + Elevated + Atgrade + Stations + Platform.Length...Meters. + urban_pop + gdp + real_cost)
+# summary(years_full_log)
+# plot(years_full_log)
 
-# Best r-squared found with log
-# years_full_sqrt <- lm(data=df_clean, sqrt(Years) ~ Stations + RR. + Length + TunnelPer + Elevated + Atgrade + Stations + Platform.Length...Meters. + urban_pop + gdp + real_cost)
-# summary(years_full_sqrt)
-# plot(years_full_sqrt)
-# 
-# years_full_reg <- lm(data=df_clean, (Years) ~ Stations + RR. + Length + TunnelPer + Elevated + Atgrade + Stations + Platform.Length...Meters. + urban_pop + gdp + real_cost)
+# Best r-squared found with sqrt
+years_full_sqrt <- lm(data=df_clean, sqrt(Years) ~ Stations + RR. + Length + TunnelPer + Elevated + Atgrade + Stations + Platform.Length...Meters. + urban_pop + gdp + real_cost)
+summary(years_full_sqrt)
+plot(years_full_sqrt)
+
+# years_full_reg <- lm(data=df_clean, (Years) ~ Stations + RR. + Length + TunnelPer + Elevated + Atgrade + Stations + Platform.Length...Meters. + urban_pop + gdp + log_real_cost)
 # summary(years_full_reg)
+# # qq plot is skewed
 # plot(years_full_reg)
 
-plot(years_full_log)
-step_model <- step(years_full_log, direction = "both")
-summary(step_model)
-# Predictors chosen: Stations, RR. TunnelPer, and GDP
-pairs(log(df_clean$Years) ~ df_clean$Stations + df_clean$RR. + df_clean$TunnelPer + df_clean$gdp)
+plot(years_full_sqrt)
+
+# step-wise
+backstep_model <- step(years_full_sqrt, direction = "both")
+summary(backstep_model)
+
+# subset
+regfit <- regsubsets(Years ~ ., data = df_clean, nvmax = 10)
+subset_years <- summary(regfit)
+subset_years
+subset_years$bic
+# Lowest BIC is model 6
+subset_years$cp
+# Lowst CP is model 9, but smaller changes from 6 on to 10
+
+```
+
+# Model Testing without imputation
+```{r}
+# full_model <- lm(transit_years_removed$Years ~ ., transit_years_removed)
+# summary(full_model)
+
+# Model using predictors assumed to have potential impact
+project_years_model <- lm(transit_years_removed$Years ~ transit_years_removed$RR. + transit_years_removed$Length + transit_years_removed$TunnelPer + transit_years_removed$Elevated + transit_years_removed$Atgrade + transit_years_removed$Stations + transit_years_removed$Platform.Length...Meters. + transit_years_removed$urban_pop + transit_years_removed$gdp + transit_years_removed$real_cost)
+summary(project_years_model)
+
+project_years_model_log <- lm(log(transit_years_removed$Years) ~ transit_years_removed$RR. + transit_years_removed$Length + transit_years_removed$TunnelPer + transit_years_removed$Elevated + transit_years_removed$Atgrade + transit_years_removed$Stations + transit_years_removed$Platform.Length...Meters. + transit_years_removed$urban_pop + transit_years_removed$gdp + transit_years_removed$real_cost)
+summary(project_years_model_log)
+
+df2_clean <- na.omit(transit_years_removed)
+project_years_model_sqrt <- lm(sqrt(df2_clean$Years) ~ df2_clean$RR. + df2_clean$Length + df2_clean$TunnelPer + df2_clean$Elevated + df2_clean$Atgrade + df2_clean$Stations + df2_clean$Platform.Length...Meters. + df2_clean$urban_pop + df2_clean$gdp + df2_clean$real_cost)
+summary(project_years_model_sqrt)
+
+plot(project_years_model_sqrt)
+step_model_no_imp <- step(project_years_model_sqrt, direction = "both")
+summary(step_model_no_imp)
 ```
