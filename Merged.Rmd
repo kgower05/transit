@@ -14,284 +14,8 @@ require(stringi)
 require(tidyr)
 require(dplyr)
 require(corrplot)
-```
-
-## Getting the data
-
-```{r}
-# Getting the Data
-transit_cost_2 <- read.csv("transit-1-16-2026.csv")
-gdp_data <- read.csv("world-bank-gdp.csv")
-country_code <- read.csv("country-code.csv")
-urban <- read.csv("urban-pop.csv")
-fed <- read.csv("FEDFUNDS.csv")
-```
-
-## Cleaning
-
-```{r}
-transit2 <- transit_cost_2[1:1007,c("Country", "City", "Start.year", "End.year", "RR.", "Length", "TunnelPer", "Tunnel", "Elevated", "Atgrade", "Stations", "Platform.Length...Meters.", "Year", "Cost.km..2023.dollars.")]
-
-cols <- c("Start.year", "End.year", "RR.", "Length", "TunnelPer", "Tunnel", "Elevated", "Atgrade", "Stations", "Platform.Length...Meters.", "Year",  "Cost.km..2023.dollars.")
-
-for(col in cols){
-  transit2[,col] <- as.numeric(transit2[,col])
-}
-
-transit2$Years <- transit2$End.year - transit2$Start.year
-transit2$real_cost <- transit2$Cost.km..2023.dollars. * transit2$Length
-transit2$log_cost <- log(transit2$Cost.km..2023.dollars.)
-transit2$log_real_cost <- log(transit2$real_cost)
-
-transit2
-```
-
-
-## Continent
-
-```{r}
-transit2 <- transit2 %>%
-  mutate(
-    Continent = case_when(
-      Country %in% c("US", "CA", "MX", "PA", "DR") ~ "North America",
-      Country %in% c("BR", "AR", "CL", "CO", "PE", "EC") ~ "South America",
-      Country %in% c("GB", "FR", "DE", "ES", "IT", "NL", "NO",
-                     "SE", "DK", "FI", "AT", "BE", "BG",
-                     "CZ", "GR", "HU", "CH", "RU", "UK", "PL", "PT", "RS", "RO", "UA") ~ "Europe",
-      Country %in% c("CN", "JP", "KR", "IN", "HK", "ID",
-                     "IL", "IR", "MY", "BD", "TH", "AE",
-                     "BH", "KW", "PH", "PK", "QA", "SA", "SG", "TR", "TW", "VN") ~ "Asia",
-      Country %in% c("AU", "NZ") ~ "Oceania",
-      Country %in% c("EG", "ZA") ~ "Africa",
-      TRUE ~ NA_character_
-    ),
-    Continent = as.factor(Continent)
-  )
-
-transit2
-```
-
-## GDP and Urban Pop
-
-```{r}
-code_map <- c(
-  "AR" = "Argentina",
-  "AT" = "Austria",
-  "AU" = "Australia",
-  "BD" = "Bangladesh",
-  "BE" = "Belgium",
-  "BG" = "Bulgaria",
-  "BH" = "Bahrain",
-  "BR" = "Brazil",
-  "CA" = "Canada",
-  "CH" = "Switzerland",
-  "CL" = "Chile",
-  "CN" = "China",
-  "CO" = "Colombia",
-  "CZ" = "Czechia",
-  "DE" = "Germany",
-  "DK" = "Denmark",
-  "DR" = "Dominican Republic",
-  "EC" = "Ecuador",
-  "EG" = "Egypt, Arab Rep.",
-  "ES" = "Spain",
-  "FI" = "Finland",
-  "FR" = "France",
-  "GB" = "United Kingdom",
-  "GR" = "Greece",
-  "HK" = "Hong Kong SAR, China",
-  "HU" = "Hungary",
-  "ID" = "Indonesia",
-  "IL" = "Israel",
-  "IN" = "India",
-  "IR" = "Iran, Islamic Rep.",
-  "IT" = "Italy",
-  "JP" = "Japan",
-  "KR" = "Korea, Rep.",
-  "KW" = "Kuwait",
-  "MX" = "Mexico",
-  "MY" = "Malaysia",
-  "NL" = "Netherlands",
-  "NO" = "Norway",
-  "NZ" = "New Zealand",
-  "PA" = "Panama",
-  "PE" = "Peru",
-  "PH" = "Philippines",
-  "PK" = "Pakistan",
-  "PL" = "Poland",
-  "PT" = "Portugal",
-  "QA" = "Qatar",
-  "RO" = "Romania",
-  "RS" = "Serbia",
-  "RU" = "Russian Federation",
-  "SA" = "Saudi Arabia",
-  "SE" = "Sweden",
-  "SG" = "Singapore",
-  "TH" = "Thailand",
-  "TR" = "Turkiye",
-  "TW" = "Taiwan, China",
-  "UA" = "Ukraine",
-  "UK" = "United Kingdom",
-  "US" = "United States",
-  "UZ" = "Uzbekistan",
-  "VN" = "Viet Nam",
-  "ZA" = "South Africa"
-)
-
-get_wb_value <- function(df, transit_code, year) {
-  if (is.na(transit_code) || is.na(year)) return(NA)
-  
-  year_col <- paste0("X", year)
-  if (!(year_col %in% names(df))) return(NA)
-  
-  wb_name <- code_map[transit_code]
-  if (is.na(wb_name)) return(NA)
-  
-  val <- df[df$Country.Name == wb_name, year_col]
-  if (length(val) == 0) return(NA)
-  
-  as.numeric(val[1])
-}
-
-transit2$gdp <- mapply(
-  function(ctry, yr) get_wb_value(gdp_data, ctry, yr),
-  transit2$Country,
-  transit2$Year
-)
-
-transit2$urban_pop <- mapply(
-  function(ctry, yr) get_wb_value(urban, ctry, yr),
-  transit2$Country,
-  transit2$Year
-)
-
-```
-
-## Histograms and missing values plot
-
-```{r histograms}
-par(mfrow = c(3, 3))
-
-hist(transit2$real_cost,
-     main = "Real Cost",
-     xlab = "real_cost")
-
-hist(transit2$log_real_cost,
-     main = "Log Real Cost",
-     xlab = "log_real_cost")
-
-hist(transit2$Cost.km..2023.dollars.,
-     main = "Cost per km",
-     xlab = "Cost per km")
-
-hist(transit2$log_cost,
-     main = "Log Cost per km",
-     xlab = "log_cost")
-
-hist(transit2$Years,
-     main = "Years",
-     xlab = "Years")
-
-hist(transit2$Stations,
-     main = "Stations",
-     xlab = "Stations")
-
-hist(transit2$Length,
-     main = "Length",
-     xlab = "Length")
-
-hist(transit2$Tunnel,
-     main = "Tunnel",
-     xlab = "Tunnel")
-
-hist(transit2$gdp,
-     main = "GDP",
-     xlab = "gdp")
-
-
-#missing values 
-gg_miss_var(transit2)
-
-# looking at this plot we decided to ignore tunnelper, platform length, atgrade, and elevated 
-#needed to examine is Years was missing randomly
-
-years_missing_summary <- transit2 %>%
-  group_by(Continent) %>%
-  summarise(
-    total_projects = n(),
-    missing_years = sum(is.na(Years)),
-    prop_missing = missing_years / total_projects
-  )
-ggplot(years_missing_summary,
-       aes(x = reorder(Continent, prop_missing),
-           y = prop_missing)) +
-  geom_col(fill = "steelblue") +
-  coord_flip() +
-  labs(
-    title = "Proportion of Missing Years by Continent",
-    x = "Continent",
-    y = "Proportion of Projects with Missing Years"
-  )
-```
-
-## Imputation
-```{r imputation}
-#imputation
-transit2_imp <- transit2 %>%
-  group_by(Country) %>%
-  mutate(
-    End.year = ifelse(is.na(End.year),
-                      round(Start.year + mean(Years, na.rm = TRUE)),
-                      End.year)
-  ) %>%
-  ungroup()
-
-transit2_imp$Years <- transit2_imp$End.year - transit2_imp$Start.year
-
-keep <- c("Country", "Start.year", "End.year", "RR.", "Length", "Tunnel", "Stations", "log_cost", "log_real_cost", "Year", "Cost.km..2023.dollars.", "Years", "real_cost", "Continent", "gdp", "urban_pop")
-
-df_clean <- na.omit(transit2_imp[keep])
-
-
-```
-
-## Overall cost and continents
-```{r alison model}
-continent_real <- lm(data=df_clean, sqrt(real_cost) ~ Stations + Years + Continent + gdp + Tunnel)
-summary(continent_real)
-plot(continent_real)
-#vif(continent_real)
-
-##removes RR
-step_model <- step(continent_real, direction = "both")
-summary(step_model)
-
-df_urban_pop <- filter(transit2, is.na(urban_pop))
-df_gdp <- filter(transit2, is.na(gdp))
-df_cont <- filter(transit2, is.na(Continent))
-```
-
-## Testing for spatial and autocorrelation
-```{r spatial and auto correlation}
-
-```
-
-# Corr plot---
-title: "Merging Code"
-output: html_document
----
-
-```{r setup, include=FALSE, message=F, warning=F}
-knitr::opts_chunk$set(echo = TRUE)
-install.packages("tidytuesdayR")
-install.packages("tidyverse")
-install.packages("naniar")
-require(naniar)
-require(ggplot2)
-require(stringi)
-require(tidyr)
-require(dplyr)
-require(corrplot)
+require(car)
+require(lmtest)
 ```
 
 ## Getting the data
@@ -321,6 +45,7 @@ transit2$real_cost <- transit2$Cost.km..2023.dollars. * transit2$Length
 transit2$log_cost <- log(transit2$Cost.km..2023.dollars.)
 transit2$log_real_cost <- log(transit2$real_cost)
 transit2$TunnelPer <- as.numeric(gsub("%", "", transit2$TunnelPer))
+transit2$sqrt_real_cost <- sqrt(transit2$real_cost)
 
 transit2
 ```
@@ -455,9 +180,9 @@ hist(transit2$real_cost,
      main = "Real Cost",
      xlab = "real_cost")
 
-hist(transit2$log_real_cost,
-     main = "Log Real Cost",
-     xlab = "log_real_cost")
+hist(transit2$sqrt_real_cost,
+     main = "Square Root Real Cost",
+     xlab = "sqrt_real_cost")
 
 hist(transit2$Cost.km..2023.dollars.,
      main = "Cost per km",
@@ -515,13 +240,24 @@ ggplot(years_missing_summary,
 
 ## Imputation
 ```{r imputation}
-#imputation
 transit2_imp <- transit2 %>%
   group_by(Country) %>%
   mutate(
     End.year = ifelse(is.na(End.year),
-                      round(Start.year + mean(Years, na.rm = TRUE)),
-                      End.year)
+                      ifelse(!is.na(Start.year),
+                        round(Start.year + mean(Years, na.rm = TRUE)),
+                        # Account for if there is no Start year, using Year instead. 45 entries do not have any start or end years
+                        round(Year + 0.5 * mean(Years, na.rm = TRUE))
+                        ),
+                      End.year),
+    # 86 NAs after End.year imputation, 45 after Start.year imputation
+    Start.year = ifelse(is.na(Start.year),
+                      ifelse(!is.na(End.year),
+                        round(End.year - mean(Years, na.rm = TRUE)),
+                        # Account for if there is no Start year, using Year instead. 45 entries do not have any start or end years
+                        round(Year - 0.5 * mean(Years, na.rm = TRUE))
+                        ),
+                      Start.year)
   ) %>%
   ungroup()
 
@@ -531,42 +267,58 @@ keep <- c("Country", "Start.year", "End.year", "RR.", "Length", "TunnelPer", "Tu
 
 df_clean <- na.omit(transit2_imp[keep])
 
+## missing values after imputing 
+gg_miss_var(transit2_imp)
+
 
 ```
 
 ## Overall cost and continents
 ```{r alison model}
-continent_real <- lm(data=df_clean, sqrt(real_cost) ~ Stations + RR. + TunnelPer + Years + Continent + gdp + Tunnel)
-summary(continent_real)
-plot(continent_real)
-#vif(continent_real)
+continent_real_init <- lm(data=df_clean, real_cost ~ Stations + RR. + Tunnel + Years + Continent + gdp + Length + TunnelPer )
+summary(continent_real_init)
+plot(continent_real_init)
+vif(continent_real_init)
 
-##removes RR
-step_model <- step(continent_real, direction = "both")
+##removes TunnelPer
+step_model <- step(continent_real_init, direction = "both")
 summary(step_model)
 
-df_urban_pop <- filter(transit2, is.na(urban_pop))
-df_gdp <- filter(transit2, is.na(gdp))
-df_cont <- filter(transit2, is.na(Continent))
+## fine tuned model - removed RR becuase high p-value 
+## doesn't make sense to have both length and stations (highly correlated) - remove the one resulting in the best performing model (removed stations)
+continent_final <- lm(data=df_clean, sqrt(real_cost) ~ Tunnel + Years + Continent + gdp + Length + TunnelPer)
+summary(continent_final)
+plot(continent_final)
 ```
 
-## Testing for spatial and autocorrelation
-```{r spatial and auto correlation}
+## Testing omdel (normality, autiocorrelation, spatial correlation, homoskedasticity, multicollinearity)
+```{r final model testing}
+# multicollinearity
+vif(continent_final)
+
+# autocorrelation
+df_clean_ordered <- df_clean[order(df_clean$Start.year), ]
+continent_final_ord <- lm(data=df_clean_ordered, sqrt(real_cost) ~ Tunnel + Years + Continent + gdp + Length + TunnelPer)
+dwtest(continent_final_ord)
+
+res <- residuals(continent_final)
+
+plot(df_clean$Start.year, res,
+     xlab = "Start Year",
+     ylab = "Residuals",
+     main = "Residuals vs Start Year")
+
+abline(h = 0, col = "red")
+
+# homoschedasticity
+leveneTest(residuals(continent_final) ~ df_clean$Continent)
+
+# normality
+ks.test(res, "pnorm", mean = mean(res), sd = sd(res))
 
 ```
 
 # Corr plot
-```{r corr}
-numeric_vars <- transit2 %>%
-  select(real_cost, Years, Start.year,
-         Length, Stations, TunnelPer, urban_pop, gdp)
-numeric_vars <- numeric_vars %>%
-  filter(complete.cases(.))
-cor_matrix <- cor(numeric_vars, use = "pairwise.complete.obs")
-
-corrplot(cor_matrix, method = "color", type = "upper",
-         tl.col = "black", tl.srt = 45)
-```
 ```{r corr}
 numeric_vars <- transit2 %>%
   select(real_cost, Years, Start.year,
