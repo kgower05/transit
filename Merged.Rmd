@@ -32,9 +32,9 @@ fed <- read.csv("FEDFUNDS.csv")
 ## Cleaning
 
 ```{r}
-transit2 <- transit_cost_2[1:1007,c("Country", "City", "Start.year", "End.year", "RR.", "Length", "TunnelPer", "Tunnel", "Elevated", "Atgrade", "Stations", "Platform.Length...Meters.", "Year", "Cost.km..2023.dollars.")]
+transit2 <- transit_cost_2[1:1007,c("Country", "City", "Start.year", "End.year", "RR.", "Length", "TunnelPer", "Tunnel", "Elevated", "Atgrade", "Stations", "Platform.Length...Meters.", "Year", "PPP.rate", "Cost.km..2023.dollars.")]
 
-cols <- c("Start.year", "End.year", "RR.", "Length", "Tunnel", "Elevated", "Atgrade", "Stations", "Platform.Length...Meters.", "Year",  "Cost.km..2023.dollars.")
+cols <- c("Start.year", "End.year", "RR.", "Length", "Tunnel", "Elevated", "Atgrade", "Stations", "Platform.Length...Meters.", "Year",  "Cost.km..2023.dollars.", "PPP.rate")
 
 for(col in cols){
   transit2[,col] <- as.numeric(transit2[,col])
@@ -263,7 +263,7 @@ transit2_imp <- transit2 %>%
 
 transit2_imp$Years <- transit2_imp$End.year - transit2_imp$Start.year
 
-keep <- c("Country", "Start.year", "End.year", "RR.", "Length", "TunnelPer", "Tunnel", "Stations", "log_cost", "log_real_cost", "Year", "Cost.km..2023.dollars.", "Years", "real_cost", "Continent", "gdp", "urban_pop")
+keep <- c("Country", "Start.year", "End.year", "RR.", "Length", "TunnelPer", "Tunnel", "Stations", "log_cost", "log_real_cost", "Year", "Cost.km..2023.dollars.", "Years", "real_cost", "Continent", "gdp", "urban_pop", "PPP.rate", "sqrt_real")
 
 df_clean <- na.omit(transit2_imp[keep])
 
@@ -272,10 +272,52 @@ gg_miss_var(transit2_imp)
 
 
 ```
+## cost/km with and without continents
+```{r cost/km}
+##cost/km model
+cost_km <- lm(log_cost ~ Years + Start.year + Length + Stations + TunnelPer + PPP.rate + gdp, df_clean)
+summary(cost_km)
+
+step_model_costkm <- step(cost_km, direction = "both")
+summary(step_model_costkm)
+
+##removed length/station because of correlation (removed stations)
+##need to keep only one of PPP rate and gdp because they are deeply connected (model performs better with PPP rate)
+cost_km_final <- lm(log_cost ~ Years + Start.year + Length + TunnelPer + PPP.rate, df_clean)
+summary(cost_km_final)
+plot(cost_km_final)
+
+##one we get fine tuned model, add in continent to see the affect of continent of cost/km
+cost_km_fin <- lm(log_cost ~ Years + Start.year+ Length + TunnelPer + PPP.rate, df_clean)
+summary(cost_km_fin)
+par(mfrow = c(2, 2))
+plot(cost_km_fin)
+
+plot(df_clean$log_cost, fitted(cost_km_fin),
+     xlab = "Actual log(Cost/km)",
+     ylab = "Predicted log(Cost/km)",
+     main = "Predicted vs Actual (cost_km_cont)")
+
+abline(0,1,col="red",lwd=2)
+abline(lm(fitted(cost_km_fin) ~ df_clean$log_cost), col="blue", lwd=2)
+
+cost_km_cont <- lm(log_cost ~ Years + Start.year + Continent + TunnelPer + PPP.rate, df_clean)
+summary(cost_km_cont)
+par(mfrow = c(2, 2))
+plot(cost_km_cont)
+
+plot(df_clean$log_cost, fitted(cost_km_cont),
+     xlab = "Actual log(Cost/km)",
+     ylab = "Predicted log(Cost/km)",
+     main = "Predicted vs Actual (cost_km_cont)")
+
+abline(0,1,col="red",lwd=2)
+abline(lm(fitted(cost_km_cont) ~ df_clean$log_cost), col="blue", lwd=2)
+```
 
 ## Overall cost and continents
-```{r alison model}
-continent_real_init <- lm(data=df_clean, real_cost ~ Stations + RR. + Tunnel + Years + Continent + gdp + Length + TunnelPer )
+```{r cost and continents model}
+continent_real_init <- lm(data=df_clean, real_cost ~ Stations + RR. + Tunnel + Years + Continent + gdp + Length + TunnelPer + PPP.rate )
 summary(continent_real_init)
 plot(continent_real_init)
 vif(continent_real_init)
@@ -288,7 +330,17 @@ summary(step_model)
 ## doesn't make sense to have both length and stations (highly correlated) - remove the one resulting in the best performing model (removed stations)
 continent_final <- lm(data=df_clean, sqrt(real_cost) ~ Tunnel + Years + Continent + gdp + Length + TunnelPer)
 summary(continent_final)
+par(mfrow = c(2, 2))
 plot(continent_final)
+
+
+plot(df_clean$sqrt_real_cost, fitted(continent_final),
+     xlab = "Actual",
+     ylab = "Predicted",
+     main = "Predicted vs Actual (sqrt real cost)")
+
+abline(0,1,col="red",lwd=2)
+abline(lm(fitted(continent_final) ~ df_clean$sqrt_real_cost), col="blue", lwd=2)
 ```
 
 ## Testing omdel (normality, autiocorrelation, spatial correlation, homoskedasticity, multicollinearity)
@@ -322,7 +374,7 @@ ks.test(res, "pnorm", mean = mean(res), sd = sd(res))
 ```{r corr}
 numeric_vars <- transit2 %>%
   select(real_cost, Years, Start.year,
-         Length, Stations, TunnelPer, urban_pop, gdp)
+         Length, Stations, TunnelPer, urban_pop, gdp, PPP.rate)
 numeric_vars <- numeric_vars %>%
   filter(complete.cases(.))
 cor_matrix <- cor(numeric_vars, use = "pairwise.complete.obs")
