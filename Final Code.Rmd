@@ -8,7 +8,12 @@ knitr::opts_chunk$set(echo = TRUE)
 install.packages("tidytuesdayR")
 install.packages("tidyverse")
 install.packages("naniar")
+install.packages("rnaturalearth")
+install.packages("rnaturalearthdata")
+require(rnaturalearth)
+require(sf)
 require(naniar)
+require(spdep)
 require(ggplot2)
 require(stringi)
 require(tidyr)
@@ -263,7 +268,7 @@ transit2_imp <- transit2 %>%
 
 transit2_imp$Years <- transit2_imp$End.year - transit2_imp$Start.year
 
-keep <- c("Country", "Start.year", "End.year", "RR.", "Length", "TunnelPer", "Tunnel", "Stations", "log_cost", "log_real_cost", "Year", "Cost.km..2023.dollars.", "Years", "real_cost", "Continent", "gdp", "urban_pop", "PPP.rate", "sqrt_real")
+keep <- c("Country", "Start.year", "End.year", "RR.", "Length", "TunnelPer", "Tunnel", "Stations", "log_cost", "log_real_cost", "Year", "Cost.km..2023.dollars.", "Years", "real_cost", "Continent", "gdp", "urban_pop", "PPP.rate", "sqrt_real_cost")
 
 df_clean <- na.omit(transit2_imp[keep])
 
@@ -275,7 +280,7 @@ gg_miss_var(transit2_imp)
 ## cost/km with and without continents
 ```{r cost/km}
 ##cost/km model
-cost_km <- lm(log_cost ~ Years + Start.year + Length + Stations + TunnelPer + PPP.rate + gdp, df_clean)
+cost_km <- lm(log_cost ~ Years + Start.year + Length + Stations + TunnelPer + PPP.rate + gdp + urban_pop, df_clean)
 summary(cost_km)
 
 step_model_costkm <- step(cost_km, direction = "both")
@@ -285,6 +290,7 @@ summary(step_model_costkm)
 ##need to keep only one of PPP rate and gdp because they are deeply connected (model performs better with PPP rate)
 cost_km_final <- lm(log_cost ~ Years + Start.year + Length + TunnelPer + PPP.rate, df_clean)
 summary(cost_km_final)
+par(mfrow = c(2, 2))
 plot(cost_km_final)
 
 ##one we get fine tuned model, add in continent to see the affect of continent of cost/km
@@ -315,9 +321,36 @@ abline(0,1,col="red",lwd=2)
 abline(lm(fitted(cost_km_cont) ~ df_clean$log_cost), col="blue", lwd=2)
 ```
 
+##Cost/km testing
+```{r cost/km test}
+vif(cost_km_cont)
+
+df_clean_ordered <- df_clean[order(df_clean$Start.year), ]
+
+cost_km_cont_ord <- lm(log_cost ~ Years + Start.year + Continent + TunnelPer + PPP.rate,
+                       data = df_clean_ordered)
+
+dwtest(cost_km_cont_ord)
+
+res <- residuals(cost_km_cont)
+
+plot(df_clean$Start.year, res,
+     xlab = "Start Year",
+     ylab = "Residuals",
+     main = "Residuals vs Start Year")
+
+abline(h = 0, col = "red")
+
+leveneTest(residuals(cost_km_cont) ~ df_clean$Continent)
+
+ks.test(res, "pnorm", mean = mean(res), sd = sd(res))
+```
+
+
+
 ## Overall cost and continents
 ```{r cost and continents model}
-continent_real_init <- lm(data=df_clean, real_cost ~ Stations + RR. + Tunnel + Years + Continent + gdp + Length + TunnelPer + PPP.rate )
+continent_real_init <- lm(data=df_clean, real_cost ~ Stations + RR. + Tunnel + Years + gdp + Length + TunnelPer + PPP.rate + urban_pop)
 summary(continent_real_init)
 plot(continent_real_init)
 vif(continent_real_init)
@@ -328,11 +361,10 @@ summary(step_model)
 
 ## fine tuned model - removed RR becuase high p-value 
 ## doesn't make sense to have both length and stations (highly correlated) - remove the one resulting in the best performing model (removed stations)
-continent_final <- lm(data=df_clean, sqrt(real_cost) ~ Tunnel + Years + Continent + gdp + Length + TunnelPer)
+continent_final <- lm(data=df_clean, sqrt(real_cost) ~ Years + Continent + gdp + Length + TunnelPer)
 summary(continent_final)
 par(mfrow = c(2, 2))
 plot(continent_final)
-
 
 plot(df_clean$sqrt_real_cost, fitted(continent_final),
      xlab = "Actual",
@@ -343,7 +375,61 @@ abline(0,1,col="red",lwd=2)
 abline(lm(fitted(continent_final) ~ df_clean$sqrt_real_cost), col="blue", lwd=2)
 ```
 
-## Testing omdel (normality, autiocorrelation, spatial correlation, homoskedasticity, multicollinearity)
+```{r cost}
+cost <- lm(data=df_clean, real_cost ~ Stations + gdp + RR.)
+summary(cost)
+
+cost_sq <- lm(data=df_clean, sqrt(real_cost) ~ Stations + gdp + RR. + TunnelPer)
+summary(cost_sq)
+
+cost_log <- lm(data=df_clean, log(real_cost) ~ Stations + gdp + RR.)
+summary(cost_log)
+
+par(mfrow = c(2, 2))
+plot(cost)
+par(mfrow = c(2, 2))
+plot(cost_sq)
+par(mfrow = c(2, 2))
+plot(cost_log)
+
+BIC(cost)
+BIC(cost_sq)
+
+AIC(cost)
+AIC(cost_sq)
+
+summary(cost)$adj.r.squared
+summary(cost_sq)$adj.r.squared
+summary(cost_log)$adj.r.squared
+
+
+
+```
+## Testing non cont model 
+```{r real cost testing}
+# multicollinearity
+vif(cost_sq)
+
+# autocorrelation
+df_clean_ordered <- df_clean[order(df_clean$Start.year), ]
+cost_sq_ord <- lm(data=df_clean, sqrt(real_cost) ~ Stations + gdp + RR. + TunnelPer)
+dwtest(cost_sq_ord)
+
+res <- residuals(cost_sq)
+
+plot(df_clean$Start.year, res,
+     xlab = "Start Year",
+     ylab = "Residuals",
+     main = "Residuals vs Start Year")
+
+abline(h = 0, col = "red")
+
+# normality
+ks.test(res, "pnorm", mean = mean(res), sd = sd(res))
+```
+
+
+## Testing  cont model (normality, autiocorrelation, spatial correlation, homoskedasticity, multicollinearity)
 ```{r final model testing}
 # multicollinearity
 vif(continent_final)
@@ -361,6 +447,32 @@ plot(df_clean$Start.year, res,
      main = "Residuals vs Start Year")
 
 abline(h = 0, col = "red")
+
+#spatial correlation
+
+final_no_cont <- lm(data=df_clean, sqrt(real_cost) ~ Years + gdp + Length + TunnelPer)  #model without continents
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+df_clean$res <- residuals(final_no_cont)
+
+country_res <- df_clean %>%
+  group_by(Country) %>%
+  summarize(mean_res = mean(res))
+
+world_res <- world %>%
+  filter(iso_a2 %in% country_res$Country) %>%
+  left_join(country_res, by = c("iso_a2" = "Country"))
+
+centroids <- st_centroid(world_res)
+coords <- st_coordinates(centroids)
+
+knn <- knearneigh(coords, k = 4)
+nb <- knn2nb(knn)
+
+listw <- nb2listw(nb, style = "W")
+
+moran.test(world_res$mean_res, listw)
 
 # homoschedasticity
 leveneTest(residuals(continent_final) ~ df_clean$Continent)
