@@ -251,18 +251,15 @@ transit2_imp <- transit2 %>%
     End.year = ifelse(is.na(End.year),
                       ifelse(!is.na(Start.year),
                         round(Start.year + mean(Years, na.rm = TRUE)),
-                        # Account for if there is no Start year, using Year instead. 45 entries do not have any start or end years
                         round(Year + 0.5 * mean(Years, na.rm = TRUE))
                         ),
                       End.year),
-    # 86 NAs after End.year imputation, 45 after Start.year imputation
     Start.year = ifelse(is.na(Start.year),
                       ifelse(!is.na(End.year),
                         round(End.year - mean(Years, na.rm = TRUE)),
-                        # Account for if there is no Start year, using Year instead. 45 entries do not have any start or end years
                         round(Year - 0.5 * mean(Years, na.rm = TRUE))
                         ),
-                      Start.year)
+                      Start.year) # 86 NAs after End.year imputation, 45 after Start.year imputation
   ) %>%
   ungroup()
 
@@ -348,35 +345,10 @@ ks.test(res, "pnorm", mean = mean(res), sd = sd(res))
 
 
 
-## Overall cost and continents
-```{r cost and continents model}
-continent_real_init <- lm(data=df_clean, real_cost ~ Stations + RR. + Tunnel + Years + gdp + Length + TunnelPer + PPP.rate + urban_pop)
-summary(continent_real_init)
-plot(continent_real_init)
-vif(continent_real_init)
-
-##removes TunnelPer
-step_model <- step(continent_real_init, direction = "both")
-summary(step_model)
-
-## fine tuned model - removed RR becuase high p-value 
-## doesn't make sense to have both length and stations (highly correlated) - remove the one resulting in the best performing model (removed stations)
-continent_final <- lm(data=df_clean, sqrt(real_cost) ~ Years + Continent + gdp + Length + TunnelPer)
-summary(continent_final)
-par(mfrow = c(2, 2))
-plot(continent_final)
-
-plot(df_clean$sqrt_real_cost, fitted(continent_final),
-     xlab = "Actual",
-     ylab = "Predicted",
-     main = "Predicted vs Actual (sqrt real cost)")
-
-abline(0,1,col="red",lwd=2)
-abline(lm(fitted(continent_final) ~ df_clean$sqrt_real_cost), col="blue", lwd=2)
-```
+##initial cost model without Continent 
 
 ```{r cost}
-cost <- lm(data=df_clean, real_cost ~ Stations + gdp + RR.)
+cost <- lm(data=df_clean, real_cost ~ Stations + gdp + RR. + TunnelPer)
 summary(cost)
 
 cost_sq <- lm(data=df_clean, sqrt(real_cost) ~ Stations + gdp + RR. + TunnelPer)
@@ -405,7 +377,57 @@ summary(cost_log)$adj.r.squared
 
 
 ```
-## Testing non cont model 
+
+## Testing non sqrt no cont model 
+```{r real cost testing}
+# multicollinearity
+vif(cost)
+
+# autocorrelation
+df_clean_ordered <- df_clean[order(df_clean$Start.year), ]
+cost_ord <- lm(data=df_clean, real_cost ~ Stations + gdp + RR. + TunnelPer)
+dwtest(cost_ord)
+
+res <- residuals(cost)
+
+plot(df_clean$Start.year, res,
+     xlab = "Start Year",
+     ylab = "Residuals",
+     main = "Residuals vs Start Year")
+
+abline(h = 0, col = "red")
+
+#spatial correlation
+
+final_no_sqrt_no_cont <- lm(data=df_clean, real_cost ~ Stations + gdp + RR. + TunnelPer)  #model without continents
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+df_clean$res <- residuals(final_no_sqrt_no_cont)
+
+country_res <- df_clean %>%
+  group_by(Country) %>%
+  summarize(mean_res = mean(res))
+
+world_res <- world %>%
+  filter(iso_a2 %in% country_res$Country) %>%
+  left_join(country_res, by = c("iso_a2" = "Country"))
+
+centroids <- st_centroid(world_res)
+coords <- st_coordinates(centroids)
+
+knn <- knearneigh(coords, k = 4)
+nb <- knn2nb(knn)
+
+listw <- nb2listw(nb, style = "W")
+
+moran.test(world_res$mean_res, listw)
+
+# normality
+ks.test(res, "pnorm", mean = mean(res), sd = sd(res))
+```
+
+## Testing sqrt no cont model 
 ```{r real cost testing}
 # multicollinearity
 vif(cost_sq)
@@ -424,10 +446,61 @@ plot(df_clean$Start.year, res,
 
 abline(h = 0, col = "red")
 
+#spatial correlation
+
+cost_no_cont <- lm(data=df_clean, sqrt(real_cost) ~ Stations + gdp + RR. + TunnelPer)  #model without continents
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+df_clean$res <- residuals(cost_no_cont)
+
+country_res <- df_clean %>%
+  group_by(Country) %>%
+  summarize(mean_res = mean(res))
+
+world_res <- world %>%
+  filter(iso_a2 %in% country_res$Country) %>%
+  left_join(country_res, by = c("iso_a2" = "Country"))
+
+centroids <- st_centroid(world_res)
+coords <- st_coordinates(centroids)
+
+knn <- knearneigh(coords, k = 4)
+nb <- knn2nb(knn)
+
+listw <- nb2listw(nb, style = "W")
+
+moran.test(world_res$mean_res, listw)
+
 # normality
 ks.test(res, "pnorm", mean = mean(res), sd = sd(res))
 ```
+## Overall cost and continents
+```{r cost and continents model}
+continent_real_init <- lm(data=df_clean, real_cost ~ Stations + RR. + Tunnel + Years + gdp + Length + TunnelPer + PPP.rate + urban_pop)
+summary(continent_real_init)
+plot(continent_real_init)
+vif(continent_real_init)
 
+
+##removes TunnelPer
+step_model <- step(continent_real_init, direction = "both")
+summary(step_model)
+
+## fine tuned model - removed RR becuase high p-value 
+## doesn't make sense to have both length and stations (highly correlated) - remove the one resulting in the best performing model (removed stations)
+## replaced tunnel with tunnelper because Levene's test passed this way
+continent_final <- lm(data=df_clean, sqrt(real_cost) ~ Years + Continent + gdp + Length + TunnelPer)
+summary(continent_final)
+par(mfrow = c(2, 2))
+plot(continent_final)
+
+
+```
+## inspecting outliers
+```{r outliers}
+df_clean[c(8, 510, 741, 755, 756), ]
+```
 
 ## Testing  cont model (normality, autiocorrelation, spatial correlation, homoskedasticity, multicollinearity)
 ```{r final model testing}
@@ -436,7 +509,7 @@ vif(continent_final)
 
 # autocorrelation
 df_clean_ordered <- df_clean[order(df_clean$Start.year), ]
-continent_final_ord <- lm(data=df_clean_ordered, sqrt(real_cost) ~ Tunnel + Years + Continent + gdp + Length + TunnelPer)
+continent_final_ord <- lm(data=df_clean_ordered, sqrt(real_cost) ~ Years + Continent + gdp + Length + TunnelPer)
 dwtest(continent_final_ord)
 
 res <- residuals(continent_final)
@@ -448,7 +521,7 @@ plot(df_clean$Start.year, res,
 
 abline(h = 0, col = "red")
 
-#spatial correlation
+#spatial correlation without continent
 
 final_no_cont <- lm(data=df_clean, sqrt(real_cost) ~ Years + gdp + Length + TunnelPer)  #model without continents
 
@@ -474,6 +547,32 @@ listw <- nb2listw(nb, style = "W")
 
 moran.test(world_res$mean_res, listw)
 
+#spatial correlation with continent
+
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+df_clean$res <- residuals(continent_final)
+
+country_res <- df_clean %>%
+  group_by(Country) %>%
+  summarize(mean_res = mean(res))
+
+world_res <- world %>%
+  filter(iso_a2 %in% country_res$Country) %>%
+  left_join(country_res, by = c("iso_a2" = "Country"))
+
+centroids <- st_centroid(world_res)
+coords <- st_coordinates(centroids)
+
+knn <- knearneigh(coords, k = 4)
+nb <- knn2nb(knn)
+
+listw <- nb2listw(nb, style = "W")
+
+moran.test(world_res$mean_res, listw)
+
+
 # homoschedasticity
 leveneTest(residuals(continent_final) ~ df_clean$Continent)
 
@@ -484,9 +583,21 @@ ks.test(res, "pnorm", mean = mean(res), sd = sd(res))
 
 # Corr plot
 ```{r corr}
+#log cost/km 
+numeric_vars <- transit2 %>%
+  select(log_cost, Years, Start.year,
+         Length, Stations, TunnelPer, Tunnel, urban_pop, gdp, PPP.rate)
+numeric_vars <- numeric_vars %>%
+  filter(complete.cases(.))
+cor_matrix <- cor(numeric_vars, use = "pairwise.complete.obs")
+
+corrplot(cor_matrix, method = "color", type = "upper",
+         tl.col = "black", tl.srt = 45)
+
+#real cost 
 numeric_vars <- transit2 %>%
   select(real_cost, Years, Start.year,
-         Length, Stations, TunnelPer, urban_pop, gdp, PPP.rate)
+         Length, Stations, TunnelPer, Tunnel, urban_pop, gdp, PPP.rate)
 numeric_vars <- numeric_vars %>%
   filter(complete.cases(.))
 cor_matrix <- cor(numeric_vars, use = "pairwise.complete.obs")
